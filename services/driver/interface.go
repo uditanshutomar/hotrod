@@ -5,8 +5,8 @@ import (
 )
 
 type DispatchRequest struct {
-	PickupLocation  *location.Location `json:"pickupLocation"`
-	DropoffLocation *location.Location `json:"dropoffLocation"`
+	PickupLocation  *location.Location `json:"pickup_location"`
+	DropoffLocation *location.Location `json:"dropoff_location"`
 }
 
 type Driver struct {
