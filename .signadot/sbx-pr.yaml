@@ -3,8 +3,12 @@ spec:
   description: preview environment for PR @{github-pr}
   cluster: "@{cluster}"
   labels:
+    # These two link the sandbox to the PR: Signadot comments sandbox status on
+    # the pull request and deletes the sandbox when it closes. They require the
+    # Signadot GitHub App installed on the repo.
+    signadot/github-repo: "@{repo}"
+    signadot/github-pull-request: "@{github-pr}"
     branch: "@{branch}"
-    github-pr: "@{github-pr}"
   ttl:
     duration: 1d
   forks:

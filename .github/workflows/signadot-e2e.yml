@@ -83,6 +83,7 @@ jobs:
           IMAGE: ${{ steps.vars.outputs.image }}
           BRANCH: ${{ steps.vars.outputs.branch }}
           PR_NUMBER: ${{ github.event.number }}
+          REPO: ${{ github.repository }}
         run: |
           signadot sandbox apply -f .signadot/sbx-pr.yaml \
             --set name="$SANDBOX" \
@@ -91,6 +92,7 @@ jobs:
             --set namespace="$NAMESPACE" \
             --set branch="$BRANCH" \
             --set github-pr="$PR_NUMBER" \
+            --set repo="$REPO" \
             --set image="$IMAGE"
 
       # --attach streams the job's output here and exits non-zero when the job
