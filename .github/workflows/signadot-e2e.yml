@@ -1,5 +1,8 @@
 name: Signadot E2E
 
+# `pull_request` (NOT pull_request_target): a fork PR runs without access to
+# repository secrets. Never switch this to pull_request_target -- it would hand
+# secrets to code from an untrusted fork.
 on:
   pull_request:
     branches: [ main ]
@@ -22,11 +25,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # github.head_ref is attacker-controlled: anyone can open a PR from a
+      # branch whose name contains shell metacharacters. Every github.* value
+      # reaches the shell through env, never through ${{ }} interpolation
+      # inside a run: block, and the branch name is validated before use.
       - name: Derive names
         id: vars
+        env:
+          BRANCH: ${{ github.head_ref }}
+          PR_NUMBER: ${{ github.event.number }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          echo "sandbox=pr-${{ github.event.number }}-driver" >> "$GITHUB_OUTPUT"
-          echo "image=ghcr.io/${{ github.repository }}/hotrod:${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          case "$BRANCH" in
+            *[!A-Za-z0-9._/-]*|"")
+              echo "::error::Refusing to run: branch name contains unexpected characters."
+              exit 1 ;;
+          esac
+          echo "branch=$BRANCH"                                >> "$GITHUB_OUTPUT"
+          echo "sandbox=pr-${PR_NUMBER}-driver"                >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${REPO}/hotrod:${HEAD_SHA}"      >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-go@v5
         with:
@@ -60,15 +78,20 @@ jobs:
         run: curl -sSLf https://raw.githubusercontent.com/signadot/cli/main/scripts/install.sh | sh
 
       - name: Create the sandbox from the committed template
+        env:
+          SANDBOX: ${{ steps.vars.outputs.sandbox }}
+          IMAGE: ${{ steps.vars.outputs.image }}
+          BRANCH: ${{ steps.vars.outputs.branch }}
+          PR_NUMBER: ${{ github.event.number }}
         run: |
           signadot sandbox apply -f .signadot/sbx-pr.yaml \
-            --set name="${{ steps.vars.outputs.sandbox }}" \
+            --set name="$SANDBOX" \
             --set cluster="$CLUSTER" \
             --set service=driver \
             --set namespace="$NAMESPACE" \
-            --set branch="${{ github.head_ref }}" \
-            --set github-pr="${{ github.event.number }}" \
-            --set image="${{ steps.vars.outputs.image }}"
+            --set branch="$BRANCH" \
+            --set github-pr="$PR_NUMBER" \
+            --set image="$IMAGE"
 
       # --attach streams the job's output here and exits non-zero when the job
       # fails, which is what turns this check red. The suite runs with
@@ -77,20 +100,26 @@ jobs:
       # the real source line.
       - name: Run the existing Playwright suite as a Signadot Job
         id: e2e
+        env:
+          SANDBOX: ${{ steps.vars.outputs.sandbox }}
+          BRANCH: ${{ steps.vars.outputs.branch }}
+          REPO: ${{ github.repository }}
         run: |
           set -o pipefail
           signadot job submit -f .signadot/testing/pr-playwright-job.yaml \
-            --set sandbox="${{ steps.vars.outputs.sandbox }}" \
-            --set branch="${{ github.head_ref }}" \
-            --set repo="${{ github.repository }}" \
+            --set sandbox="$SANDBOX" \
+            --set branch="$BRANCH" \
+            --set repo="$REPO" \
             --set namespace="$NAMESPACE" \
             --attach --timeout 20m 2>&1 | tee job.log
 
       - name: Publish the failure to the job summary
         if: failure() && steps.e2e.outcome == 'failure'
+        env:
+          SANDBOX: ${{ steps.vars.outputs.sandbox }}
         run: |
           {
-            echo "## Playwright failed against Signadot sandbox \`${{ steps.vars.outputs.sandbox }}\`"
+            echo "## Playwright failed against Signadot sandbox \`$SANDBOX\`"
             echo
             echo '```'
             tail -c 60000 job.log | grep -aE "✘|✓|Error:|Timed out|expect\(|FAILED|Sandbox:" | tail -40
