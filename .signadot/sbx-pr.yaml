@@ -1,0 +1,30 @@
+name: "@{name}"
+spec:
+  description: preview environment for PR @{github-pr}
+  cluster: "@{cluster}"
+  labels:
+    branch: "@{branch}"
+    github-pr: "@{github-pr}"
+  ttl:
+    duration: 1d
+  forks:
+  - forkOf:
+      kind: Deployment
+      name: "@{service}"
+      namespace: "@{namespace}"
+    customizations:
+      images:
+      - container: hotrod
+        image: "@{image}"
+      # The HotROD overlay pins imagePullPolicy: Never so a local cluster can
+      # use a preloaded image. A fork inherits that, which makes a CI-built
+      # image unpullable. Override it for this fork only.
+      patch:
+        type: strategic
+        value: |
+          spec:
+            template:
+              spec:
+                containers:
+                - name: hotrod
+                  imagePullPolicy: IfNotPresent

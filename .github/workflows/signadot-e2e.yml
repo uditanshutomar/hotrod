@@ -6,7 +6,7 @@ on:
 
 permissions:
   contents: read
-  checks: write
+  packages: write
 
 jobs:
   e2e:
@@ -15,43 +15,84 @@ jobs:
     env:
       SIGNADOT_ORG: ${{ secrets.SIGNADOT_ORG }}
       SIGNADOT_API_KEY: ${{ secrets.SIGNADOT_API_KEY }}
-      SANDBOX: pr-snake-case-driver
       NAMESPACE: hotrod-istio
+      CLUSTER: minikube
+      # Must match your cluster node's architecture.
+      NODE_ARCH: arm64
     steps:
       - uses: actions/checkout@v4
+
+      - name: Derive names
+        id: vars
+        run: |
+          echo "sandbox=pr-${{ github.event.number }}-driver" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${{ github.repository }}/hotrod:${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      # The Dockerfile only COPYs a prebuilt binary, so cross-building for the
+      # cluster's architecture needs no emulation.
+      - name: Build the binary for the cluster's architecture
+        run: |
+          mkdir -p "dist/linux/$NODE_ARCH/bin"
+          CGO_ENABLED=0 GOOS=linux GOARCH="$NODE_ARCH" \
+            go build -trimpath -o "dist/linux/$NODE_ARCH/bin/hotrod" ./cmd/hotrod
+
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push the PR image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/${{ env.NODE_ARCH }}
+          provenance: false
+          push: true
+          tags: ${{ steps.vars.outputs.image }}
 
       - name: Install the Signadot CLI
         run: curl -sSLf https://raw.githubusercontent.com/signadot/cli/main/scripts/install.sh | sh
 
-      # --attach streams the job's output into this log and exits non-zero when
-      # the job fails. That exit code is what turns the GitHub Check red.
-      # The suite runs with Playwright's `github` reporter, so each failure is
-      # emitted as a ::error file=,line=:: command. Those stream through
-      # --attach and GitHub turns them into annotations anchored to real source
-      # lines -- which is what a reviewer (human or not) needs to act on.
+      - name: Create the sandbox from the committed template
+        run: |
+          signadot sandbox apply -f .signadot/sbx-pr.yaml \
+            --set name="${{ steps.vars.outputs.sandbox }}" \
+            --set cluster="$CLUSTER" \
+            --set service=driver \
+            --set namespace="$NAMESPACE" \
+            --set branch="${{ github.head_ref }}" \
+            --set github-pr="${{ github.event.number }}" \
+            --set image="${{ steps.vars.outputs.image }}"
+
+      # --attach streams the job's output here and exits non-zero when the job
+      # fails, which is what turns this check red. The suite runs with
+      # Playwright's `github` reporter, so each failure is emitted as a
+      # ::error file=,line=:: command that GitHub turns into an annotation on
+      # the real source line.
       - name: Run the existing Playwright suite as a Signadot Job
         id: e2e
         run: |
           set -o pipefail
           signadot job submit -f .signadot/testing/pr-playwright-job.yaml \
-            --set sandbox="$SANDBOX" \
+            --set sandbox="${{ steps.vars.outputs.sandbox }}" \
             --set branch="${{ github.head_ref }}" \
             --set repo="${{ github.repository }}" \
             --set namespace="$NAMESPACE" \
             --attach --timeout 20m 2>&1 | tee job.log
 
-      # Without this the check exposes output.summary = null, leaving nothing
-      # to read but the raw log.
-      - name: Publish the failure to the check summary
+      - name: Publish the failure to the job summary
         if: failure() && steps.e2e.outcome == 'failure'
         run: |
           {
-            echo "## Playwright failed against Signadot sandbox \`$SANDBOX\`"
-            echo
-            echo "The suite ran inside the cluster against a sandbox forking the"
-            echo "\`driver\` Deployment at this PR's commit. Baseline was untouched."
+            echo "## Playwright failed against Signadot sandbox \`${{ steps.vars.outputs.sandbox }}\`"
             echo
             echo '```'
-            tail -c 60000 job.log | grep -aE "✘|✓|Error:|Timed out|expect\(|failed|FAILED|Sandbox:" | tail -40
+            tail -c 60000 job.log | grep -aE "✘|✓|Error:|Timed out|expect\(|FAILED|Sandbox:" | tail -40
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
