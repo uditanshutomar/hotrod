@@ -1,0 +1,8 @@
+# TEMPORARY DIAGNOSTIC — not tutorial content.
+# Isolating whether CodeRabbit's GitHub-checks analysis is what causes reviews
+# to be accepted and then never delivered. If the review returns with this
+# disabled, that path is the culprit.
+reviews:
+  tools:
+    github-checks:
+      enabled: false
