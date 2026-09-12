@@ -38,7 +38,7 @@ func NewClient(tracerProvider trace.TracerProvider, logger log.Factory, hostPort
 
 func (c *Client) FindRoute(ctx context.Context, from, to string) (*Route, error) {
 	c.logger.For(ctx).Info("Resolving route", zap.String("from", from), zap.String("to", from))
-	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
 	defer cancel()
 	response, err := c.client.FindRoute(ctx, &FindRouteRequest{
 		From: from,
