@@ -1,4 +1,9 @@
 reviews:
+  # The GitHub Checks tool activates "when a pull request is opened or updated"
+  # -- the automatic-review path. Public repos under 10 stars have automatic
+  # reviews off by default, so a manual @coderabbitai review never engages it.
+  auto_review:
+    enabled: true
   tools:
     github-checks:
       enabled: true
