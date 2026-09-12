@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: read
+  checks: write
 
 jobs:
   e2e:
@@ -22,14 +23,35 @@ jobs:
       - name: Install the Signadot CLI
         run: curl -sSLf https://raw.githubusercontent.com/signadot/cli/main/scripts/install.sh | sh
 
-      # --attach streams the job's output into this log and, critically,
-      # exits non-zero when the job fails. That exit code is what turns
-      # this step -- and the GitHub Check -- red.
+      # --attach streams the job's output into this log and exits non-zero when
+      # the job fails. That exit code is what turns the GitHub Check red.
+      # The suite runs with Playwright's `github` reporter, so each failure is
+      # emitted as a ::error file=,line=:: command. Those stream through
+      # --attach and GitHub turns them into annotations anchored to real source
+      # lines -- which is what a reviewer (human or not) needs to act on.
       - name: Run the existing Playwright suite as a Signadot Job
+        id: e2e
         run: |
+          set -o pipefail
           signadot job submit -f .signadot/testing/pr-playwright-job.yaml \
             --set sandbox="$SANDBOX" \
             --set branch="${{ github.head_ref }}" \
             --set repo="${{ github.repository }}" \
             --set namespace="$NAMESPACE" \
-            --attach --timeout 20m
+            --attach --timeout 20m 2>&1 | tee job.log
+
+      # Without this the check exposes output.summary = null, leaving nothing
+      # to read but the raw log.
+      - name: Publish the failure to the check summary
+        if: failure() && steps.e2e.outcome == 'failure'
+        run: |
+          {
+            echo "## Playwright failed against Signadot sandbox \`$SANDBOX\`"
+            echo
+            echo "The suite ran inside the cluster against a sandbox forking the"
+            echo "\`driver\` Deployment at this PR's commit. Baseline was untouched."
+            echo
+            echo '```'
+            tail -c 60000 job.log | grep -aE "✘|✓|Error:|Timed out|expect\(|failed|FAILED|Sandbox:" | tail -40
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

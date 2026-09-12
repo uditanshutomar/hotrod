@@ -15,7 +15,7 @@ spec:
     npm ci
 
     set +e
-    npm run e2e:playwright --spec playwright-tests/basic.spec.ts
+    npx playwright test --reporter=github,list
     E2E_EXIT_CODE=$?
     set -e
 
