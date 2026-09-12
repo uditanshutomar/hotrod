@@ -1,0 +1,35 @@
+name: Signadot E2E
+
+on:
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: Playwright against a Signadot sandbox
+    runs-on: ubuntu-latest
+    env:
+      SIGNADOT_ORG: ${{ secrets.SIGNADOT_ORG }}
+      SIGNADOT_API_KEY: ${{ secrets.SIGNADOT_API_KEY }}
+      SANDBOX: pr-snake-case-driver
+      NAMESPACE: hotrod-istio
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the Signadot CLI
+        run: curl -sSLf https://raw.githubusercontent.com/signadot/cli/main/scripts/install.sh | sh
+
+      # --attach streams the job's output into this log and, critically,
+      # exits non-zero when the job fails. That exit code is what turns
+      # this step -- and the GitHub Check -- red.
+      - name: Run the existing Playwright suite as a Signadot Job
+        run: |
+          signadot job submit -f .signadot/testing/pr-playwright-job.yaml \
+            --set sandbox="$SANDBOX" \
+            --set branch="${{ github.head_ref }}" \
+            --set repo="${{ github.repository }}" \
+            --set namespace="$NAMESPACE" \
+            --attach --timeout 20m
