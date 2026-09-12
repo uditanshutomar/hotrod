@@ -90,8 +90,9 @@ func (eta *bestETA) getRoutes(ctx context.Context, pickupLoc *location.Location,
 	for _, dd := range drivers {
 		wg.Add(1)
 		driver := dd // capture loop var
-		// Use worker pool to (potentially) execute requests in parallel
-		eta.pool.Execute(func() {
+		// Fan out route lookups directly instead of queueing them behind the
+		// worker pool, which serialises lookups once the pool is saturated.
+		go func() {
 			route, err := eta.route.FindRoute(ctx, driver.Coordinates, pickupLoc.Coordinates)
 			routesLock.Lock()
 			results = append(results, routeResult{
@@ -101,7 +102,7 @@ func (eta *bestETA) getRoutes(ctx context.Context, pickupLoc *location.Location,
 			})
 			routesLock.Unlock()
 			wg.Done()
-		})
+		}()
 	}
 	wg.Wait()
 	return results
