@@ -3,6 +3,7 @@ package driver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"sync"
 	"time"
@@ -44,6 +45,11 @@ func (eta *bestETA) Get(ctx context.Context, dispatchReq *DispatchRequest,
 	drivers []*Driver) (*Response, error) {
 	ctx, span := eta.tracer.Start(ctx, "CalculateBestRoute", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
+
+	// validate the request before using it
+	if dispatchReq.PickupLocation == nil {
+		return nil, fmt.Errorf("dispatch request is missing a pickup location")
+	}
 
 	// get all routes from the drivers to the pick up location
 	results := eta.getRoutes(ctx, dispatchReq.PickupLocation, drivers)
