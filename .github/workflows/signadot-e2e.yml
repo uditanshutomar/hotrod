@@ -3,9 +3,11 @@ name: Signadot E2E
 # `pull_request` (NOT pull_request_target): a fork PR runs without access to
 # repository secrets. Never switch this to pull_request_target -- it would hand
 # secrets to code from an untrusted fork.
+# No branch filter: a stacked fix PR (e.g. from @coderabbitai fix-ci) targets the
+# feature branch, not main. Without this it would never be validated against the
+# environment that caught the bug in the first place.
 on:
   pull_request:
-    branches: [ main ]
 
 permissions:
   contents: read
